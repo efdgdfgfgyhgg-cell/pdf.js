@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+import { ChunkedStreamManager } from "../../src/core/chunked_stream.js";
 import { createImage } from "../../src/core/editor/pdf_images.js";
 import { Dict } from "../../src/core/primitives.js";
 import { FlateStream } from "../../src/core/flate_stream.js";
@@ -74,5 +75,47 @@ describe("stream", function () {
       }
       expect(decoded).toEqual(expected);
     });
+  });
+});
+
+describe("ChunkedStreamManager", function () {
+  it("should release completed range request records", async function () {
+    const manager = new ChunkedStreamManager(null, {
+      length: 32,
+      rangeChunkSize: 8,
+      disableAutoFetch: true,
+      msgHandler: { send() {} },
+    });
+    spyOn(manager, "sendRequest").and.returnValue(new Promise(() => {}));
+    const first = manager.requestRange(0, 16);
+    const overlapping = manager.requestRange(8, 24);
+    manager.onReceiveData({ begin: 0, chunk: new ArrayBuffer(8) });
+    expect(manager._chunksNeededByRequest.size).toEqual(2);
+    manager.onReceiveData({ begin: 8, chunk: new ArrayBuffer(8) });
+    await first;
+    expect(manager._chunksNeededByRequest.size).toEqual(1);
+    manager.onReceiveData({ begin: 16, chunk: new ArrayBuffer(8) });
+    await overlapping;
+    expect(manager._chunksNeededByRequest.size).toEqual(0);
+    expect(manager._promisesByRequest.size).toEqual(0);
+    expect(manager._requestsByChunk.size).toEqual(0);
+  });
+
+  it("should not retain requests for already loaded chunks or empty ranges", async function () {
+    const manager = new ChunkedStreamManager(null, {
+      length: 16,
+      rangeChunkSize: 8,
+      disableAutoFetch: true,
+      msgHandler: { send() {} },
+    });
+    spyOn(manager, "sendRequest");
+    manager.onReceiveData({ begin: 0, chunk: new ArrayBuffer(8) });
+    for (let i = 0; i < 100; i++) {
+      await manager.requestRange(0, 8);
+      await manager.requestRanges();
+    }
+    expect(manager.sendRequest).not.toHaveBeenCalled();
+    expect(manager._chunksNeededByRequest.size).toEqual(0);
+    expect(manager._promisesByRequest.size).toEqual(0);
   });
 });

@@ -327,7 +327,6 @@ class ChunkedStreamManager {
     const requestId = this.currRequestId++;
 
     const chunksNeeded = new Set();
-    this._chunksNeededByRequest.set(requestId, chunksNeeded);
     for (const chunk of chunks) {
       if (!this.stream.hasChunk(chunk)) {
         chunksNeeded.add(chunk);
@@ -337,6 +336,7 @@ class ChunkedStreamManager {
     if (chunksNeeded.size === 0) {
       return Promise.resolve();
     }
+    this._chunksNeededByRequest.set(requestId, chunksNeeded);
 
     const capability = Promise.withResolvers();
     this._promisesByRequest.set(requestId, capability);
@@ -504,6 +504,7 @@ class ChunkedStreamManager {
     for (const requestId of loadedRequests) {
       const capability = this._promisesByRequest.get(requestId);
       this._promisesByRequest.delete(requestId);
+      this._chunksNeededByRequest.delete(requestId);
       capability.resolve();
     }
 
